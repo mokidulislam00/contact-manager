@@ -1,7 +1,6 @@
-
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 const API_URL = "http://localhost:5000/api/contacts";
 
@@ -20,125 +19,195 @@ type FormData = {
   address: string;
 };
 
+type IconName =
+  | "address"
+  | "arrow"
+  | "close"
+  | "mail"
+  | "map"
+  | "moon"
+  | "pencil"
+  | "phone"
+  | "plus"
+  | "search"
+  | "sun"
+  | "trash"
+  | "users";
+
+const iconPaths: Record<IconName, string> = {
+  address: "M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5zM8 9h8M8 13h5",
+  arrow: "M7 17 17 7M8 7h9v9",
+  close: "m6 6 12 12M18 6 6 18",
+  mail: "M4 6h16v12H4zM4 7l8 6 8-6",
+  map: "M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0ZM12 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4",
+  moon: "M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11Z",
+  pencil: "m15 5 4 4M4 20l4-.8L19 8a2.1 2.1 0 0 0-3-3L5 16z",
+  phone: "M7 3h10v18H7zM10 6h4M11 18h2",
+  plus: "M12 5v14M5 12h14",
+  search: "m20 20-4.5-4.5M18 10.5a7.5 7.5 0 1 1-15 0 7.5 7.5 0 0 1 15 0Z",
+  sun: "M12 3v2M12 19v2M5.64 5.64l1.42 1.42m9.88 9.88 1.42 1.42M3 12h2m14 0h2M5.64 18.36l1.42-1.42m9.88-9.88 1.42-1.42M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z",
+  trash: "M4 7h16M10 11v6M14 11v6M5 7l1 14h12l1-14M9 7V4h6v3",
+  users: "M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M10 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M20 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8",
+};
+
+function Icon({
+  name,
+  size = 18,
+}: {
+  name: IconName;
+  size?: number;
+}) {
+  return (
+    <svg
+      aria-hidden="true"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d={iconPaths[name]} />
+    </svg>
+  );
+}
+
+const emptyForm: FormData = {
+  name: "",
+  email: "",
+  phone: "",
+  address: "",
+};
+
+function getInitials(name: string) {
+  return name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join("");
+}
+
 export default function Home() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [formError, setFormError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [darkMode, setDarkMode] = useState(false);
+  const [formData, setFormData] = useState<FormData>(emptyForm);
 
-  const [formData, setFormData] = useState<FormData>({
-    name: "",
-    email: "",
-    phone: "",
-    address: "",
-  });
-
-  // Get all contacts
-  const fetchContacts = async () => {
+  const fetchContacts = useCallback(async () => {
     try {
       setLoading(true);
-
+      setLoadError("");
       const response = await fetch(API_URL);
 
       if (!response.ok) {
-        throw new Error("Failed to fetch contacts");
+        throw new Error("Could not load your contacts. Please try again.");
       }
 
       const data: Contact[] = await response.json();
-
       setContacts(data);
     } catch (error) {
       console.error("Fetch error:", error);
+      setLoadError(
+        error instanceof Error
+          ? error.message
+          : "Could not load your contacts. Please try again.",
+      );
     } finally {
       setLoading(false);
     }
-  };
-
-  // Load contacts when page opens
-  useEffect(() => {
-    fetchContacts();
   }, []);
 
-  // Input change
-  const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value,
-    });
+  useEffect(() => {
+    void fetchContacts();
+  }, [fetchContacts]);
+
+  useEffect(() => {
+    setDarkMode(localStorage.getItem("contact-manager-theme") === "dark");
+  }, []);
+
+  const toggleTheme = () => {
+    const nextDarkMode = !darkMode;
+    setDarkMode(nextDarkMode);
+    localStorage.setItem("contact-manager-theme", nextDarkMode ? "dark" : "light");
   };
 
-  // Add / Update contact
-  const handleSubmit = async (
-    e: React.FormEvent<HTMLFormElement>
-  ) => {
-    e.preventDefault();
+  const resetForm = () => {
+    setFormData(emptyForm);
+    setEditingId(null);
+    setFormError("");
+    setShowForm(false);
+  };
+
+  const openNewContactForm = () => {
+    setFormData(emptyForm);
+    setEditingId(null);
+    setFormError("");
+    setShowForm(true);
+  };
+
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSaving(true);
+    setFormError("");
 
     try {
-      const url = editingId
-        ? `${API_URL}/${editingId}`
-        : API_URL;
-
-      const method = editingId ? "PUT" : "POST";
-
-      const response = await fetch(url, {
-        method,
-        headers: {
-          "Content-Type": "application/json",
+      const response = await fetch(
+        editingId ? `${API_URL}/${editingId}` : API_URL,
+        {
+          method: editingId ? "PUT" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(formData),
         },
-        body: JSON.stringify(formData),
-      });
+      );
 
       if (!response.ok) {
-        throw new Error("Request failed");
+        throw new Error("We couldn’t save this contact. Please try again.");
       }
 
       await fetchContacts();
-
-      setFormData({
-        name: "",
-        email: "",
-        phone: "",
-        address: "",
-      });
-
-      setEditingId(null);
-      setShowForm(false);
+      resetForm();
     } catch (error) {
       console.error("Submit error:", error);
-      alert("Something went wrong!");
+      setFormError(
+        error instanceof Error
+          ? error.message
+          : "Something went wrong while saving this contact.",
+      );
+    } finally {
+      setSaving(false);
     }
   };
 
-  // Delete contact
   const handleDelete = async (id: string) => {
-    const confirmDelete = confirm(
-      "Are you sure you want to delete this contact?"
-    );
-
-    if (!confirmDelete) return;
+    if (!window.confirm("Are you sure you want to delete this contact?")) {
+      return;
+    }
 
     try {
-      const response = await fetch(`${API_URL}/${id}`, {
-        method: "DELETE",
-      });
-
+      const response = await fetch(`${API_URL}/${id}`, { method: "DELETE" });
       if (!response.ok) {
-        throw new Error("Delete failed");
+        throw new Error("Could not delete this contact. Please try again.");
       }
-
-      setContacts((prev) =>
-        prev.filter((contact) => contact._id !== id)
-      );
+      setContacts((current) => current.filter((contact) => contact._id !== id));
     } catch (error) {
       console.error("Delete error:", error);
-      alert("Failed to delete contact!");
+      window.alert(
+        error instanceof Error
+          ? error.message
+          : "Something went wrong while deleting this contact.",
+      );
     }
   };
 
-  // Edit contact
   const handleEdit = (contact: Contact) => {
     setFormData({
       name: contact.name,
@@ -146,292 +215,270 @@ export default function Home() {
       phone: contact.phone,
       address: contact.address,
     });
-
     setEditingId(contact._id);
+    setFormError("");
     setShowForm(true);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  // Search
   const filteredContacts = contacts.filter((contact) => {
-    const text = search.toLowerCase();
-
+    const query = search.trim().toLowerCase();
     return (
-      contact.name.toLowerCase().includes(text) ||
-      contact.email.toLowerCase().includes(text) ||
-      contact.phone.toLowerCase().includes(text)
+      contact.name.toLowerCase().includes(query) ||
+      contact.email.toLowerCase().includes(query) ||
+      contact.phone.toLowerCase().includes(query) ||
+      contact.address.toLowerCase().includes(query)
     );
   });
 
-  // Reset form
-  const resetForm = () => {
-    setFormData({
-      name: "",
-      email: "",
-      phone: "",
-      address: "",
-    });
-
-    setEditingId(null);
-    setShowForm(false);
-  };
-
   return (
-    <main className="min-h-screen bg-slate-950 text-white">
-
-      {/* Background decoration */}
-      <div className="pointer-events-none fixed inset-0 overflow-hidden">
-        <div className="absolute -left-40 -top-40 h-80 w-80 rounded-full bg-cyan-500/10 blur-3xl" />
-
-        <div className="absolute -right-40 top-40 h-96 w-96 rounded-full bg-blue-500/10 blur-3xl" />
-      </div>
-
-      <div className="relative mx-auto max-w-7xl px-5 py-10">
-
-        {/* Header */}
-        <header className="mb-10 flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-
-          <div>
-            <p className="mb-2 text-sm font-medium uppercase tracking-[0.25em] text-cyan-400">
-              Contact Manager
-            </p>
-
-            <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">
-              Manage your{" "}
-              <span className="text-cyan-400">
-                contacts.
-              </span>
-            </h1>
-
-            <p className="mt-3 max-w-xl text-slate-400">
-              Add, edit, search and manage your contacts
-              easily from one place.
-            </p>
-          </div>
-
+    <main className={`app-shell${darkMode ? " theme-dark" : ""}`}>
+      <header className="topbar">
+        <a className="brand" href="#" aria-label="Contact Manager home">
+          <span className="brand-mark">
+            <Icon name="address" size={21} />
+          </span>
+          <span className="brand-name">Contact Manager</span>
+        </a>
+        <div className="topbar-tools">
+          <span className="topbar-caption">
+            <span className="online-dot" />
+            Your contact list
+          </span>
           <button
-            onClick={() => {
-              if (showForm) {
-                resetForm();
-              } else {
-                setShowForm(true);
-              }
-            }}
-            className="rounded-xl bg-cyan-500 px-6 py-3 font-semibold text-slate-950 shadow-lg shadow-cyan-500/20 transition duration-300 hover:-translate-y-1 hover:bg-cyan-400 active:scale-95"
+            className="theme-toggle"
+            type="button"
+            onClick={toggleTheme}
+            aria-label={`Switch to ${darkMode ? "light" : "dark"} mode`}
+            aria-pressed={darkMode}
           >
-            {showForm ? "Close Form" : "+ Add Contact"}
+            <Icon name={darkMode ? "sun" : "moon"} size={17} />
+            <span>{darkMode ? "Light mode" : "Dark mode"}</span>
           </button>
-        </header>
+        </div>
+      </header>
 
-        {/* Form */}
-        {showForm && (
-          <section className="mb-10 animate-[fadeIn_.3s_ease-out] rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-2xl backdrop-blur">
-
-            <div className="mb-6">
-              <h2 className="text-2xl font-bold">
-                {editingId
-                  ? "Edit Contact"
-                  : "Add New Contact"}
-              </h2>
-
-              <p className="mt-1 text-sm text-slate-400">
-                {editingId
-                  ? "Update the contact information."
-                  : "Enter the contact information below."}
+      <div className="main-area">
+        <div className="page-content">
+          <section className="page-heading">
+            <div>
+              <div className="eyebrow">CONTACTS</div>
+              <h1>Your contacts</h1>
+              <p className="page-description">
+                Add, search, and manage your contacts in one place.
               </p>
             </div>
-
-            <form
-              onSubmit={handleSubmit}
-              className="grid gap-5 sm:grid-cols-2"
-            >
-
-              <input
-                name="name"
-                value={formData.name}
-                onChange={handleChange}
-                placeholder="Full name"
-                required
-                className="rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20"
-              />
-
-              <input
-                name="email"
-                type="email"
-                value={formData.email}
-                onChange={handleChange}
-                placeholder="Email address"
-                required
-                className="rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20"
-              />
-
-              <input
-                name="phone"
-                value={formData.phone}
-                onChange={handleChange}
-                placeholder="Phone number"
-                required
-                className="rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20"
-              />
-
-              <input
-                name="address"
-                value={formData.address}
-                onChange={handleChange}
-                placeholder="Address"
-                required
-                className="rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20"
-              />
-
-              <button
-                type="submit"
-                className="rounded-xl bg-cyan-500 px-5 py-3 font-semibold text-slate-950 transition duration-300 hover:bg-cyan-400 hover:shadow-lg hover:shadow-cyan-500/20 active:scale-[0.98] sm:col-span-2"
-              >
-                {editingId
-                  ? "Update Contact"
-                  : "Save Contact"}
-              </button>
-
-            </form>
+            <button className="button button-primary" onClick={openNewContactForm}>
+              <Icon name="plus" size={18} />
+              <span>Add a contact</span>
+            </button>
           </section>
-        )}
 
-        {/* Search + Total */}
-        <section className="mb-8 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          {showForm && (
+            <section className="form-panel" aria-labelledby="form-title">
+              <div className="form-heading">
+                <div>
+                  <div className="eyebrow">{editingId ? "CONTACT DETAILS" : "NEW CONNECTION"}</div>
+                  <h2 id="form-title">{editingId ? "Edit contact" : "Add someone new"}</h2>
+                  <p>All fields are required so their details are easy to find.</p>
+                </div>
+                <button
+                  className="icon-button close-button"
+                  onClick={resetForm}
+                  type="button"
+                  aria-label="Close form"
+                >
+                  <Icon name="close" size={19} />
+                </button>
+              </div>
+              <form onSubmit={handleSubmit}>
+                <div className="form-grid">
+                  <label className="field">
+                    <span>Full name</span>
+                    <input
+                      name="name"
+                      autoComplete="name"
+                      value={formData.name}
+                      onChange={(event) => setFormData({ ...formData, name: event.target.value })}
+                      placeholder="e.g. Alex Morgan"
+                      required
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Email address</span>
+                    <input
+                      name="email"
+                      type="email"
+                      autoComplete="email"
+                      value={formData.email}
+                      onChange={(event) => setFormData({ ...formData, email: event.target.value })}
+                      placeholder="alex@example.com"
+                      required
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Phone number</span>
+                    <input
+                      name="phone"
+                      type="tel"
+                      autoComplete="tel"
+                      value={formData.phone}
+                      onChange={(event) => setFormData({ ...formData, phone: event.target.value })}
+                      placeholder="+1 (555) 000-0000"
+                      required
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Address</span>
+                    <input
+                      name="address"
+                      autoComplete="street-address"
+                      value={formData.address}
+                      onChange={(event) => setFormData({ ...formData, address: event.target.value })}
+                      placeholder="City, country"
+                      required
+                    />
+                  </label>
+                </div>
+                {formError && <p className="form-error" role="alert">{formError}</p>}
+                <div className="form-actions">
+                  <button className="button button-quiet" type="button" onClick={resetForm}>
+                    Cancel
+                  </button>
+                  <button className="button button-primary" type="submit" disabled={saving}>
+                    {saving ? "Saving…" : editingId ? "Save changes" : "Save contact"}
+                  </button>
+                </div>
+              </form>
+            </section>
+          )}
 
-          <div className="relative w-full md:max-w-md">
-
-            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500">
-              🔍
-            </span>
-
-            <input
-              type="text"
-              placeholder="Search contacts..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full rounded-xl border border-slate-800 bg-slate-900 px-11 py-3 text-white outline-none transition focus:border-cyan-400"
-            />
-
-          </div>
-
-          <div className="rounded-xl border border-slate-800 bg-slate-900 px-5 py-3">
-
-            <span className="text-sm text-slate-400">
-              Total contacts
-            </span>
-
-            <span className="ml-3 font-bold text-cyan-400">
-              {contacts.length}
-            </span>
-
-          </div>
-        </section>
-
-        {/* Loading */}
-        {loading ? (
-          <div className="flex min-h-[300px] items-center justify-center">
-
-            <div className="h-10 w-10 animate-spin rounded-full border-4 border-slate-700 border-t-cyan-400" />
-
-          </div>
-
-        ) : filteredContacts.length === 0 ? (
-
-          /* Empty */
-          <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/50 py-20 text-center">
-
-            <div className="mb-4 text-5xl">
-              📭
+          <section className="directory-section" id="directory">
+            <div className="directory-heading">
+              <div>
+                <div className="directory-title-row">
+                  <h2>Your people</h2>
+                  <span className="result-count">{filteredContacts.length}</span>
+                </div>
+                <p>All your connections, together in one place.</p>
+              </div>
+              <label className="search-box">
+                <Icon name="search" size={18} />
+                <input
+                  type="search"
+                  aria-label="Search contacts"
+                  placeholder="Search your contacts"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                />
+                {search && (
+                  <button
+                    type="button"
+                    className="search-clear"
+                    aria-label="Clear search"
+                    onClick={() => setSearch("")}
+                  >
+                    <Icon name="close" size={15} />
+                  </button>
+                )}
+              </label>
             </div>
 
-            <h2 className="text-xl font-semibold">
-              No contacts found
-            </h2>
-
-            <p className="mt-2 text-slate-400">
-              Try adding a new contact or changing your search.
-            </p>
-
-          </div>
-
-        ) : (
-
-          /* Contact cards */
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-
-            {filteredContacts.map((contact) => (
-
-              <article
-                key={contact._id}
-                className="group rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-lg transition duration-300 hover:-translate-y-1 hover:border-cyan-500/40 hover:shadow-cyan-500/5"
-              >
-
-                {/* Card top */}
-                <div className="mb-5 flex items-center justify-between">
-
-                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-cyan-500/10 text-lg font-bold text-cyan-400">
-                    {contact.name.charAt(0).toUpperCase()}
-                  </div>
-
-                  <div className="flex gap-2">
-
-                    <button
-                      onClick={() => handleEdit(contact)}
-                      className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 transition hover:border-cyan-400 hover:text-cyan-400"
-                    >
-                      Edit
-                    </button>
-
-                    <button
-                      onClick={() =>
-                        handleDelete(contact._id)
-                      }
-                      className="rounded-lg border border-red-500/20 px-3 py-2 text-sm text-red-400 transition hover:bg-red-500/10"
-                    >
-                      Delete
-                    </button>
-
-                  </div>
+            {loading ? (
+              <div className="state-panel">
+                <span className="loading-spinner" />
+                <p>Gathering your contacts…</p>
+              </div>
+            ) : loadError ? (
+              <div className="state-panel state-error" role="alert">
+                <span className="state-icon"><Icon name="address" size={22} /></span>
+                <h3>We couldn’t reach your directory.</h3>
+                <p>{loadError}</p>
+                <button className="button button-secondary" onClick={() => void fetchContacts()}>
+                  Try again
+                </button>
+              </div>
+            ) : filteredContacts.length === 0 ? (
+              <div className="state-panel">
+                <span className="state-icon"><Icon name={search ? "search" : "users"} size={22} /></span>
+                <h3>{search ? "No matches this time." : "Your directory starts here."}</h3>
+                <p>
+                  {search
+                    ? "Try a different name, email, phone, or address."
+                    : "Add your first contact and keep their details close at hand."}
+                </p>
+                {!search && (
+                  <button className="button button-primary" onClick={openNewContactForm}>
+                    <Icon name="plus" size={17} />
+                    Add your first contact
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="contacts-grid">
+                {filteredContacts.map((contact) => (
+                  <article className="contact-card" key={contact._id}>
+                    <div className="contact-card-heading">
+                      <span className="contact-avatar">{getInitials(contact.name)}</span>
+                      <div className="contact-card-identity">
+                        <h3 className="contact-name">{contact.name}</h3>
+                        <span className="contact-card-label">PERSONAL CONTACT</span>
+                      </div>
+                    </div>
+                    <div className="contact-card-details">
+                      <a className="contact-detail" href={`mailto:${contact.email}`}>
+                        <span className="contact-detail-icon"><Icon name="mail" size={16} /></span>
+                        <span>{contact.email}</span>
+                      </a>
+                      <a className="contact-detail" href={`tel:${contact.phone}`}>
+                        <span className="contact-detail-icon"><Icon name="phone" size={16} /></span>
+                        <span>{contact.phone}</span>
+                      </a>
+                      <span className="contact-detail">
+                        <span className="contact-detail-icon"><Icon name="map" size={16} /></span>
+                        <span>{contact.address}</span>
+                      </span>
+                    </div>
+                    <div className="contact-card-actions">
+                      <button
+                        className="card-action"
+                        onClick={() => handleEdit(contact)}
+                        aria-label={`Edit ${contact.name}`}
+                      >
+                        <Icon name="pencil" size={15} />
+                        Edit contact
+                      </button>
+                      <button
+                        className="card-action card-action-delete"
+                        onClick={() => void handleDelete(contact._id)}
+                        aria-label={`Delete ${contact.name}`}
+                      >
+                        <Icon name="trash" size={15} />
+                        Delete
+                      </button>
+                    </div>
+                  </article>
+                ))}
+                <div className="contacts-footer">
+                  <span>
+                    Showing <strong>{filteredContacts.length}</strong> of{" "}
+                    <strong>{contacts.length}</strong>{" "}
+                    {contacts.length === 1 ? "contact" : "contacts"}
+                  </span>
+                  <span className="table-footer-note">
+                    <Icon name="arrow" size={14} />
+                    Select a card to manage a connection
+                  </span>
                 </div>
+              </div>
+            )}
+          </section>
 
-                {/* Name */}
-                <h2 className="truncate text-xl font-bold">
-                  {contact.name}
-                </h2>
-
-                {/* Contact info */}
-                <div className="mt-5 space-y-3 text-sm">
-
-                  <div className="flex items-center gap-3 text-slate-300">
-                    <span>✉️</span>
-                    <span className="truncate">
-                      {contact.email}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-3 text-slate-300">
-                    <span>📞</span>
-                    <span>
-                      {contact.phone}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-3 text-slate-300">
-                    <span>📍</span>
-                    <span className="truncate">
-                      {contact.address}
-                    </span>
-                  </div>
-
-                </div>
-
-              </article>
-
-            ))}
-
-          </div>
-        )}
-
+          <footer className="page-footer">
+            <span>Made for keeping people close.</span>
+            <span>KINDRED <span className="footer-dot">·</span> YOUR PERSONAL DIRECTORY</span>
+          </footer>
+        </div>
       </div>
     </main>
   );
